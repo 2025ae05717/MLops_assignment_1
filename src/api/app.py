@@ -124,7 +124,6 @@ async def health_check():
 
 
 @app.post("/predict", response_model=PredictionResponse)
-@prediction_latency.time()
 async def predict(input_data: HeartDiseaseInput):
     """
     Predict heart disease risk.
@@ -138,6 +137,7 @@ async def predict(input_data: HeartDiseaseInput):
     if model is None or scaler is None or feature_columns is None:
         raise HTTPException(status_code=503, detail="Model or preprocessing components not loaded")
 
+    started_at = time.perf_counter()
     try:
         # Convert input to DataFrame
         input_dict = input_data.dict()
@@ -156,10 +156,11 @@ async def predict(input_data: HeartDiseaseInput):
         # Get confidence (probability of predicted class)
         confidence = probability[prediction]
 
-        # Determine risk level
-        if confidence < 0.5:
+        # Risk is based on estimated disease probability, not confidence in either class.
+        disease_probability = float(probability[1])
+        if disease_probability < 0.5:
             risk_level = "Low"
-        elif confidence < 0.75:
+        elif disease_probability < 0.75:
             risk_level = "Medium"
         else:
             risk_level = "High"
@@ -180,6 +181,8 @@ async def predict(input_data: HeartDiseaseInput):
     except Exception as e:
         logger.error(f"Prediction error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        prediction_latency.observe(time.perf_counter() - started_at)
 
 
 @app.get("/metrics")
